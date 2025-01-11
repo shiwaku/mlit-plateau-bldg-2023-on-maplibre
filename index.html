@@ -1,0 +1,213 @@
+<html>
+
+<head>
+  <title>3D都市モデルPLATEAU建築物モデル2023年（国土交通省）</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src='https://unpkg.com/maplibre-gl@4.5.0/dist/maplibre-gl.js'></script>
+  <link href='https://unpkg.com/maplibre-gl@4.5.0/dist/maplibre-gl.css' rel='stylesheet' />
+  <script src="https://unpkg.com/pmtiles@2.11.0/dist/index.js"></script>
+  <script src="https://unpkg.com/@maplibre/maplibre-gl-geocoder@1.2.0/dist/maplibre-gl-geocoder.min.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/@maplibre/maplibre-gl-geocoder@1.2.0/dist/maplibre-gl-geocoder.css"
+    type="text/css" />
+  <style>
+    body {
+      margin: 0;
+    }
+
+    #map {
+      height: 100%;
+      width: 100%;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="map"></div>
+  <script type="text/javascript">
+    // Protocolの設定
+    let protocol = new pmtiles.Protocol();
+    maplibregl.addProtocol('pmtiles', (request) => {
+      return new Promise((resolve, reject) => {
+        const callback = (err, data) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve({ data });
+          }
+        };
+        protocol.tile(request, callback);
+      });
+    });
+
+    // マップの初期化
+    const map = new maplibregl.Map({
+      container: 'map',
+      style: 'dark.json',
+      hash: true,
+      zoom: 8.12,
+      center: [139.58, 35.733],
+      pitch: 0,
+      bearing: 0,
+      maxPitch: 85,
+      attributionControl: false,
+    })
+
+    //ジオコーダー（国土地理院 地名検索API）
+    var geocoder_api = {
+      forwardGeocode: async (config) => {
+        const features = [];
+        const Text_Prefix = config.query.substr(0, 3);
+        try {
+          let request =
+            "https://msearch.gsi.go.jp/address-search/AddressSearch?q=" +
+            config.query;
+          const response = await fetch(request);
+          const geojson = await response.json();
+
+          for (var i = 0; i < geojson.length; i++) {
+            if (geojson[i].properties.title.indexOf(Text_Prefix) !== -1) {
+              let point = {
+                type: "Feature",
+                geometry: {
+                  type: "Point",
+                  coordinates: geojson[i].geometry.coordinates,
+                },
+                place_name: geojson[i].properties.title,
+                properties: geojson[i].properties,
+                text: geojson[i].properties.title,
+                place_type: ["place"],
+                center: geojson[i].geometry.coordinates,
+              };
+              features.push(point);
+            }
+          }
+        } catch (e) {
+          console.error(`Failed to forwardGeocode with error: ${e}`);
+        }
+        return {
+          features: features,
+        };
+      },
+    };
+
+    map.addControl(
+      new MaplibreGeocoder(geocoder_api, { maplibregl: maplibregl }),
+      "top-left"
+    );
+
+    // ズーム・回転
+    map.addControl(new maplibregl.NavigationControl());
+
+    // フルスクリーンモードのオンオフ
+    map.addControl(new maplibregl.FullscreenControl());
+
+    // 現在位置表示
+    map.addControl(new maplibregl.GeolocateControl({
+      positionOptions: {
+        enableHighAccuracy: false
+      },
+      fitBoundsOptions: { maxZoom: 18 },
+      trackUserLocation: true,
+      showUserLocation: true
+    }));
+
+    // スケール表示
+    map.addControl(new maplibregl.ScaleControl({
+      maxWidth: 200,
+      unit: 'metric'
+    }));
+
+    // Attributionを折りたたみ表示
+    map.addControl(new maplibregl.AttributionControl({
+      compact: true,
+      customAttribution: '（<a href="https://twitter.com/shi__works" target="_blank">X(旧Twitter)</a> | <a href="" target="_blank">Github</a>） ',
+    }));
+
+    map.on('load', () => {
+      // PLATEAU建築物モデル（PMTiles）ソース
+      map.addSource("plateau-bldg", {
+        type: "vector",
+        url: "pmtiles://https://pmtiles-data.s3.ap-northeast-1.amazonaws.com/plateau/PLATEAU_2023_LOD0.pmtiles",
+        minzoom: 14,
+        maxzoom: 16,
+        attribution: '<a href="https://www.geospatial.jp/ckan/dataset/plateau">3D都市モデルPLATEAU建築物モデル（国土交通省）</a>'
+      });
+
+      // PLATEAU建築物モデル（PMTiles）レイヤ
+      map.addLayer({
+        "id": "plateau-bldg",
+        "source": "plateau-bldg",
+        "source-layer": "PLATEAU_2023_LOD0",
+        "minzoom": 14,
+        "maxzoom": 23,
+        "type": "fill-extrusion",
+        "paint": {
+          "fill-extrusion-color": "#00FF00",
+          "fill-extrusion-opacity": 0.6,
+          "fill-extrusion-height": ["get", "measured_height"]
+        }
+      });
+
+      // PLATEAU建築物モデル重心（PMTiles）ソース
+      map.addSource("plateau-bldg-centroid", {
+        type: "vector",
+        url: "pmtiles://https://pmtiles-data.s3.ap-northeast-1.amazonaws.com/plateau/PLATEAU_2023_LOD0_Centroid.pmtiles",
+        minzoom: 0,
+        maxzoom: 13,
+        attribution: '<a href="https://www.geospatial.jp/ckan/dataset/plateau">3D都市モデルPLATEAU建築物モデル（国土交通省）</a>'
+      });
+
+      // PLATEAU建築物モデル重心（PMTiles）レイヤ
+      map.addLayer({
+        "id": "plateau-bldg-centroid-1",
+        "type": "circle",
+        "source": "plateau-bldg-centroid",
+        "source-layer": "PLATEAU_2023_LOD0_Centroid_4326fgb",
+        "minzoom": 0,
+        "maxzoom": 14,
+        "paint": {
+          "circle-color": "#6ff77c",
+          "circle-radius": 15,
+          "circle-blur": 3,
+          "circle-opacity": 0.8
+        }
+      });
+
+      // PLATEAU建築物モデル重心（PMTiles）レイヤ
+      map.addLayer({
+        "id": "plateau-bldg-centroid-2",
+        "type": "circle",
+        "source": "plateau-bldg-centroid",
+        "source-layer": "PLATEAU_2023_LOD0_Centroid_4326fgb",
+        "minzoom": 0,
+        "maxzoom": 14,
+        "paint": {
+          "circle-color": '#00ff37',
+          "circle-radius": 7.5,
+          "circle-blur": 3,
+          "circle-opacity": 0.8
+        }
+      });
+
+      // PLATEAU建築物モデル重心（PMTiles）レイヤ
+      map.addLayer({
+        "id": "plateau-bldg-centroid-3",
+        "type": "circle",
+        "source": "plateau-bldg-centroid",
+        "source-layer": "PLATEAU_2023_LOD0_Centroid_4326fgb",
+        "minzoom": 0,
+        "maxzoom": 14,
+        "paint": {
+          "circle-color": '#ffffff',
+          "circle-radius": 1.5,
+          "circle-blur": 0,
+          "circle-opacity": 1
+        }
+      });
+
+    })
+  </script>
+</body>
+
+</html>
